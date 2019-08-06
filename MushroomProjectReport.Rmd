@@ -1,0 +1,197 @@
+---
+title: "Mushroom Project"
+author: "Amber Palladino"
+date: "August 5, 2019"
+output: pdf_document
+geometry: left = 1.5cm, right = 1.5cm, top = 1.5cm, bottom = 1.5cm
+---
+
+## Overview
+
+This report describes my work on the Choose Your Own capstone project for the HarvardX online Data Science professional certificate program.
+
+The project assignment is to choose a dataset for a machine learning project. Websites with publicly available datasets were provided as options for exploration. I selected a dataset about mushrooms, which is based on records drawn from The Audobon Society Field Guide. The dataset contains over 8,000 records, each of which corresponds to a hypothetical sample. Each sample is classified as edible or poisonous ("class"), and each record also includes descriptions of the sample's physical characteristics across 22 categories such as cap shape, odor, and gill color.
+
+The goal of my project is to create an algorithm that categorizes mushrooms as edible or poisonous based on their physical characteristics. To accomplish this, I split the mushroom data into training and test sets. The training dataset was used for model exploration and evaluation, and to fit the final model. The test dataset was used solely to measure the accuracy of predictions generated using the final model.
+
+## Methods
+
+The first step of the assignment requires code that installs and loads the R packages used within the project. The Mushroom dataset is then downloaded from the University of California - Irvine website as a text file. The text is parsed into a data frame for exploration and analysis. 
+
+```{r file_creation_execute, results='hide', warning=FALSE, message=FALSE, results = "asis", echo=FALSE}
+# Install required packages, if needed
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+if(!require(rpart)) install.packages("rpart", repos = "http://cran.us.r-project.org")
+if(!require(e1071)) install.packages("e1071", repos = "http://cran.us.r-project.org")
+
+# Mushroom dataset: Description
+# https://archive.ics.uci.edu/ml/datasets/Mushroom
+# Mushroom dataset: Data Download
+# https://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/agaricus-lepiota.data
+
+# Download mushroom data from the University of California - Irvine database
+dl <- tempfile()
+download.file("https://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/agaricus-lepiota.data", dl)
+
+# Read downloaded .data file into an R data frame and add column names (based on dataset description)
+mushrooms <- read.csv(dl, header=FALSE, sep=",", col.names = c("class", "cap_shape", "cap_surface", "cap_color", "bruises", "odor", "gill_attachment", "gill_spacing", "gill_size", "gill_color", "stalk_shape", "stalk_root", "stalk_surface_above_ring", "stalk_surface_below_ring", "stalk_color_above_ring", "stalk_color_below_ring", "veil_type", "veil_color", "ring_number", "ring_type", "spore_print_color", "population", "habitat"))
+```
+
+```{r file_creation_display, eval=FALSE}
+# Install required packages, if needed
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+if(!require(rpart)) install.packages("rpart", repos = "http://cran.us.r-project.org")
+if(!require(e1071)) install.packages("e1071", repos = "http://cran.us.r-project.org")
+
+# Mushroom dataset: Description
+# https://archive.ics.uci.edu/ml/datasets/Mushroom
+# Mushroom dataset: Data Download
+# https://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/agaricus-lepiota.data
+
+# Download mushroom data from the University of California - Irvine database
+dl <- tempfile()
+download.file("https://archive.ics.uci.edu/ml/machine-learning-databases/mushroom/agaricus-lepiota.data",
+dl)
+
+# Read downloaded .data file into an R data frame and add column names (based on dataset description)
+mushrooms <- read.csv(dl, header=FALSE, sep=",", col.names = c("class", "cap_shape", "cap_surface",
+"cap_color", "bruises", "odor", "gill_attachment", "gill_spacing", "gill_size", "gill_color",
+"stalk_shape", "stalk_root", "stalk_surface_above_ring", "stalk_surface_below_ring",
+"stalk_color_above_ring", "stalk_color_below_ring", "veil_type", "veil_color", "ring_number",
+"ring_type", "spore_print_color", "population", "habitat"))
+```
+
+\pagebreak
+Exploration includes displaying the first few rows of the dataset, confirming that the data were successfully stored as a data frame object, viewing the dimensions of the data frame, and examining a summary of the data. The most critical characteristic among the data points for each mushroom specimen is whether each sample is poisonous or edible, so distribution between those categories is examined specifically. Definition of the alphabetic variables used for each attribute can be viewed at https://archive.ics.uci.edu/ml/datasets/Mushroom.
+
+```{r exploration}
+# Data exploration and visualization
+head(mushrooms)
+class(mushrooms)
+dim(mushrooms)
+```
+\pagebreak
+```{r exploration_continued}
+summary(mushrooms)
+```
+\pagebreak
+```{r exploration_3}
+# The attribute being predicted by this algorithm is labeled "class", with values of "e" ("edible")
+# or "p" ("poisonous")
+plot(mushrooms$class, main = "Distribution by Class \n (Edible versus Poisonous)")
+sum(mushrooms$class == "e") / length(mushrooms$class)
+# Approximately 52% of the mushrooms in the dataset are edible, and roughly 48% are poisonous
+```
+
+I divided the data into training ('mtrain') and test ('mtest') segments (90% and 10% of the data, respectively). I further divided the training dataset into a training subset ('mtrain_subset') and a test subset ('mtest_subset') to be used for model exploration and evaluation (80% and 20%, respectively).
+
+```{r training_subset, warning=FALSE}
+# Set seed to ensure that partition results will be the same every time the code is executed
+# If using R 3.5 or earlier, use `set.seed(1)` instead
+set.seed(1, sample.kind="Rounding")
+
+# Partition data into training and test sets
+# Test set will be 10% of mushroom data
+test_index <- createDataPartition(y = mushrooms$class, times = 1, p = 0.1, list = FALSE)
+mtrain <- mushrooms[-test_index,]
+mtest <- mushrooms[test_index,]
+
+# Create train and test subsets within the training data for algorithm evaluation
+# Evaluation test subset will be 20% of training data
+test_index_subset <- createDataPartition(y = mtrain$class, times = 1, p = 0.2, list = FALSE)
+mtrain_subset <- mtrain[-test_index,]
+mtest_subset <- mtrain[test_index,]
+
+# Remove temporary objects
+rm(dl, test_index, test_index_subset)
+```
+
+I first explored making predictions using a classification tree method. Specifically, I used the RPART function (Recursive Partitioning and Regression Trees) available in the "rpart" R library. This function examines the data and determines the best ways to branch the  algorithm for accurate prediction. 
+
+```{r rpart}
+# Use rpart to generate a classification tree
+rp_fit <- rpart(class ~ .,
+                data = mtrain_subset)
+
+# Visualize classification tree structure and summary of nodes generated
+printcp(rp_fit)
+summary(rp_fit)
+```
+\pagebreak
+```{r rpart_plot}
+plot(rp_fit, margin = 0.1, main = "Mushroom Classification Tree")
+text(rp_fit, cex = 0.8)
+```
+
+The Confusion Parameter (CP) is a key performance indicator of the classification tree method. The objective is to find a model that minimizes the value of CP. Refining the classification tree to use the smallest CP value is called "pruning" the tree.
+
+```{r prune}
+# Determine lowest CP to create pruned tree
+min_cp <- rp_fit$cptable[which.min(rp_fit$cptable[,"xerror"]), "CP"]
+pruned <- prune(rp_fit, cp = min_cp)
+```
+
+I used the pruned tree to generate classification predictions for the training subset, and then evaluated the success of the predictions using a confusion matrix table. The table identifies how many of the samples in the training subset were edible and how many were poisonous, and compares those counts with the model's predictions.
+
+```{r training_confusion_matrix}
+# Generate classification predictions on training data and view as confusion matrix table
+table(mtrain_subset$class, predict(pruned, type = "class"), dnn = c("Actual", "Predicted"))
+```
+
+The results of the classification tree predictions were fairly good - of the 6,593 total observations in the training subset, only 36 were misclassified, which is an error rate of approximately 0.5%. However, the incorrect classifications were 36 poisonous samples that were classified as edible, which is problematic. To try to reduce the number of false-positive results, I next applied the random forest model, which generates 500 classification trees using samples of the training subset (which are randomly selected with replacement, using the bootstrap method). The accuracy of the 500 classification trees is evaluated, and the best model is selected.
+
+```{r random_forest}
+# Use RandomForest to generate a series of classification trees
+rf_fit <- randomForest(class ~ .,
+                       data = mtrain_subset)
+
+# View RandomForest results
+print(rf_fit)
+
+# View importance of each predictor
+importance(rf_fit)
+```
+
+I then used the best model to create predictions for the full training subset.
+
+```{r train_subset}
+# Create predictions for the training subset and determine accuracy of model
+pred <- predict(rf_fit, newdata = mtrain_subset)
+confusionMatrix(pred, mtrain_subset$class)$overall["Accuracy"]
+```
+
+The algorithm was able to correctly classify all of the specimens in the training subset. I next evaluated how well the model classified the specimens in the test subset.
+
+```{r test_subset}
+# Create predictions for the test subset and determine accuracy of model to 
+# ensure the model has not been overfit
+confusionMatrix(predict(rf_fit, mtest_subset), mtest_subset$class)$overall["Accuracy"]
+```
+
+Predictions generated for the test subset of the training data were also correct. This successful classification method can now be trained on the complete set of training data, and then predictions can be created for the test data.
+
+```{r final_model}
+# Execute final prediction, using full training dataset to train model
+final_rf_fit <- randomForest(class ~ .,
+                             data = mtrain)
+
+# Generate predictions for test data using final model and view results and accuracy
+confusionMatrix(predict(final_rf_fit, mtest), mtest$class)
+```
+
+## Results
+
+The final model is able to predict whether each specimen is edible or poisonous with 100% accuracy.
+\pagebreak
+
+## Conclusion
+
+The ability to predict whether a mushroom specimen is poisonous based on its physical characteristics can be incredibly useful, especially in a wilderness survival setting. 
+
+A potential improvement to this algorithm would be to eliminate characteristics from the algorithm if they contribute little to no predictive power. For example, the initial data exploration showed that all specimens had a "veil_type" value of "p" ("partial"), so the random forest importance results showed a Mean Decrease Gini value of 0 for that predictor. Similarly, the importance results showed only 1.11460 Mean Decrease Gini value for the "gill_attachment" variable, indicating that it contributed very little predictive power. This particular dataset was not tremendously large, but if this algorithm was to be used on a larger dataset, its speed and efficiency could be increased by removing characteristics that are not very useful in making predictions about whether a specimen is edible or poisonous. 
